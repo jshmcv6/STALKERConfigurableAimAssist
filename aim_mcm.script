@@ -1,0 +1,160 @@
+-- A list of weapon kinds we will use in the script
+local weapon_kinds = {
+	"pistol",
+	"smg",
+	"rifle",
+	"shotgun",
+	"sniper",
+	"explosive"
+}
+
+-- Create default values for all our new per-weapon settings
+local defaults = {
+	["master_switch"] = 1, -- 1 = On, 0 = Off
+	["main_bone"] = 3,
+	["toggle_keybind"] = 15,
+	["time_out_checkbox"] = false,
+	["time_out_input"] = 0.5,
+	["limit_mode"] = 0,
+	["limit_value"] = 10,
+	["closer_wider"] = false,
+	["closer_wider_value"] = 0.7,
+	["closer_wider_distance"] = 0,
+	["frendly_fire"] = false,
+}	
+
+-- Dynamically add defaults for each weapon type
+for _, kind in ipairs(weapon_kinds) do
+	defaults[kind .. "_work_state"] = 1 -- Default to "Zoom Mode"
+	if kind == "sniper" then
+		defaults[kind .. "_radius"] = 0.999
+		defaults[kind .. "_smooth_factor"] = 0.044
+		defaults[kind .. "_retention_radius"] = 0.999
+		defaults[kind .. "_retention_tightness"] = 1.41
+	elseif kind == "rifle" or kind == "pistol" or kind == "smg" or kind == "shotgun" then
+		defaults[kind .. "_radius"] = 0.996
+		defaults[kind .. "_smooth_factor"] = 0.059
+		defaults[kind .. "_retention_radius"] = 0.991
+		defaults[kind .. "_retention_tightness"] = 1.23
+	else -- explosive
+		defaults[kind .. "_radius"] = 0.995
+		defaults[kind .. "_smooth_factor"] = 0.01
+		defaults[kind .. "_retention_radius"] = 0.995
+		defaults[kind .. "_retention_tightness"] = 1.0
+	end
+	-- (Recoil Comp default removed)
+end
+
+function get_config(key)
+	return ui_mcm.get("aim_assist/"..key) or defaults[key]
+end
+
+-- ui_mcm_aim_assist_
+
+-- Helper function to add descriptive text under an option
+function add_desc(text)
+	return {id = "desc_"..math.random(1, 9999), type = "desc", text = text, clr={255, 150, 150, 150}, spacing = 10}
+end
+
+function on_mcm_load()
+	
+	local all_settings = {
+		-- == GLOBAL SETTINGS ==
+		{id = "title",							type= "slide",		link= "ui_options_slider_player",	text="aim_assist_title",	size= {512,50},	spacing = 20 },	
+		{id = "header_global",					type = "desc", text="--- Global Settings (Apply to All Weapons) ---", clr={255, 255, 255, 255}},
+		
+		{id = "master_switch", 					type = "list", 		val = 2, content={{1, "turn_on"},{0, "turn_off"},}, def = 1 },
+		add_desc("The main on/off switch for the entire mod."),
+		
+		{id = "toggle_keybind", 				type = "key_bind",	val = 2, def = 15 },
+		add_desc("Press this key to temporarily enable or disable the aim assist. This is a master override that works for all modes."),
+		
+		{id = "main_bone", 						type = "list", 		val = 2, content={{1, "bone_head"},{2, "bone_neck"},{3, "bone_spine"},}, def = 3 },
+		add_desc("The main body part the aim assist will target. Use 'Spine' for better compatibility with mutants that lack head/neck bones. 'Neck' or 'Spine' lets recoil walk shots up to the head."),
+
+		{id = "frendly_fire",					type = "check",	val = 1,	def = false,	},
+		add_desc("If checked, aim assist will also lock onto friendly and neutral stalkers. (Default: Off)"),
+		
+		{id = "line_g1",						type = "line" },
+		
+		{id = "closer_wider",					type = "check",	val = 1,	def = false },
+		add_desc("If checked, uses the settings below to make aim assist 'stickier' at close range."),
+		
+		{id = "closer_wider_value", 			type = "track",	val = 2,	min = 0.7,	max = 1,	step = 0.001,	def = 0.7 },
+		add_desc("The 'sticky' radius to use at close range. (Lower = Stronger). Only active if 'closer_wider' is checked."),
+		
+		{id = "closer_wider_distance", 			type = "track",	val = 2,	min = 0,	max = 100,	step = 1,		def = 0 },			
+		add_desc("The maximum distance (in meters) to use the 'stickier' radius. (e.g., 10m). Only active if 'closer_wider' is checked."),
+		
+		{id = "line_g2",						type = "line" },
+
+		{id = "limit_mode", 					type = "list", val = 2, content={{-1, "less"},{0, "non"},{1, "more"},}, def=0 },
+		add_desc("Limits aim assist based on distance. 'Less' = only works on targets LESS than X meters. 'More' = only works on targets MORE than X meters."),
+		
+		{id = "limit_value", 					type = "track",	val = 2,	min = 0,	max = 1000,	step = 1,		def = 10, },
+		add_desc("The distance (in meters) to use for the 'Distance Limit Mode' above."),
+		
+		{id = "line_g3",						type = "line" },
+		
+		{id = "time_out_checkbox",				type = "check",	val = 1,	def = false },
+		add_desc("If checked, 'Zoom Mode' aim assist will automatically turn off after X seconds (prevents tracking through walls forever)."),
+		
+		{id = "time_out_input", 				type = "track",	val = 2,	min = 0,	max = 10,	step = 0.1,		def = 0.5 },
+		add_desc("The time in seconds before 'Zoom Mode' automatically disengages. Only active if 'time_out_checkbox' is checked."),
+
+		{id = "line_g4",						type = "line" },
+	}
+	
+	-- == PER-WEAPON SETTINGS ==
+	for _, kind in ipairs(weapon_kinds) do
+		local title = "--- " .. kind:sub(1,1):upper() .. kind:sub(2) .. " Settings ---"
+		
+		table.insert(all_settings, { id = kind.."_sep", type = "line" })
+		table.insert(all_settings, { id = kind.."_title", type = "desc", text=title, clr={255, 255, 215, 0}})
+		
+		table.insert(all_settings, {
+			id = kind.."_work_state", 
+			type = "list", val = 2,
+			content={
+				{1, "zoom_mode"},
+				{3, "fire_mode"},
+				{4, "mode_off"}, 
+			}, 
+			def = defaults[kind.."_work_state"] 
+		})
+		table.insert(all_settings, add_desc("How aim assist activates for this weapon. 'Zoom' = on right-click. 'Fire' = on left-click. 'Off' = disabled for this weapon type."))
+		
+		table.insert(all_settings, {
+			id = kind.."_radius",
+			type = "track", val = 2, min = 0.7, max = 1, step = 0.001,
+			def = defaults[kind.."_radius"]
+		})
+		table.insert(all_settings, add_desc("The activation radius for this weapon. (1.0 = weak/small cone, 0.7 = strong/large cone). Controls how close your aim needs to be to acquire lock."))
+		
+		table.insert(all_settings, {
+			id = kind.."_smooth_factor", 
+			type = "track", val = 2, min = 0, max = 1, step = 0.001,
+			def = defaults[kind.."_smooth_factor"]
+		})
+		table.insert(all_settings, add_desc("Controls the pull strength towards the target (0 = off/no pull, 0.01 = very gentle suggestion (~45% correction in 1s), 0.1 = moderate (~99% in 1s), 1 = strong snap/instant). This affects how hard the assist attracts your aim to the target once locked. The pull is frame-rate independent, calibrated assuming 60 FPS. Interacts with tightness for resistance handling."))
+		
+		table.insert(all_settings, {
+			id = kind.."_retention_radius",
+			type = "track", val = 2, min = 0.7, max = 1, step = 0.001,
+			def = defaults[kind.."_retention_radius"]
+		})
+		table.insert(all_settings, add_desc("The retention radius for keeping lock on the current target (1.0 = small buffer/easy to lose lock, 0.7 = large buffer/hard to lose lock). Set to same as activation radius for no extra slack, lower for more stickiness/forgiveness during recoil or movement."))
+		
+		table.insert(all_settings, {
+			id = kind.."_retention_tightness",
+			type = "track", val = 2, min = 0, max = 20, step = 0.01,
+			def = defaults[kind.."_retention_tightness"]
+		})
+		table.insert(all_settings, add_desc("Adjusts the tightness of the retention lock (0 = tightest/hardest to break, 1 = default/no change, higher values up to 20 = loosest/easiest to break). Higher values make the lock easier to break, especially for long-range or scoped weapons."))
+		
+		-- (Recoil Comp slider and description removed)
+	end
+
+	options = { id= "aim_assist", sh=true, gr = all_settings }
+	return options
+end
