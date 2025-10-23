@@ -1,0 +1,192 @@
+-- A list of magnification levels we will use in the script
+local mag_levels = {
+	"hipfire",   -- For 'Fire Mode'
+	"irons",     -- For 1x, red dots, and iron sights
+	"low_zoom",  -- For 2x-4x scopes
+	"high_zoom"  -- For 6x+ scopes
+}
+
+-- Create default values for all our new per-magnification settings
+local defaults = {
+	["master_switch"] = 1, -- 1 = On, 0 = Off
+	["main_bone"] = 3,
+	["toggle_keybind"] = 15,
+	["time_out_checkbox"] = false,
+	["time_out_input"] = 0.5,
+	["limit_mode"] = 0,
+	["limit_value"] = 10,
+	["closer_wider"] = false,
+	["closer_wider_value"] = 0.7,
+	["closer_wider_distance"] = 0,
+	["frendly_fire"] = false,
+}	
+
+-- Dynamically add defaults for each magnification level
+for _, level in ipairs(mag_levels) do
+	if level == "hipfire" then
+		-- "Fire Mode" settings (tighter radius, stronger pull)
+		defaults[level .. "_radius"] = 0.996
+		defaults[level .. "_smooth_factor"] = 0.059
+		defaults[level .. "_retention_radius"] = 0.991
+		defaults[level .. "_retention_tightness"] = 1.23
+		defaults[level .. "_resist_threshold"] = 0.5
+		defaults[level .. "_switch_hysteresis"] = 0.01
+		defaults[level .. "_switch_cooldown"] = 0.1  -- NEW: Low default for hipfire
+	elseif level == "irons" then
+		-- Iron Sights / 1x Red Dots
+		defaults[level .. "_radius"] = 0.997
+		defaults[level .. "_smooth_factor"] = 0.050
+		defaults[level .. "_retention_radius"] = 0.992
+		defaults[level .. "_retention_tightness"] = 1.30
+		defaults[level .. "_resist_threshold"] = 0.4
+		defaults[level .. "_switch_hysteresis"] = 0.01
+		defaults[level .. "_switch_cooldown"] = 0.2
+	elseif level == "low_zoom" then
+		-- 2x-4x Scopes
+		defaults[level .. "_radius"] = 0.998
+		defaults[level .. "_smooth_factor"] = 0.045
+		defaults[level .. "_retention_radius"] = 0.998
+		defaults[level .. "_retention_tightness"] = 1.40
+		defaults[level .. "_resist_threshold"] = 0.3
+		defaults[level .. "_switch_hysteresis"] = 0.015
+		defaults[level .. "_switch_cooldown"] = 0.3
+	else -- "high_zoom"
+		-- 6x+ Scopes (very subtle)
+		defaults[level .. "_radius"] = 0.999
+		defaults[level .. "_smooth_factor"] = 0.040
+		defaults[level .. "_retention_radius"] = 0.999
+		defaults[level .. "_retention_tightness"] = 1.50
+		defaults[level .. "_resist_threshold"] = 0.1
+		defaults[level .. "_switch_hysteresis"] = 0.02
+		defaults[level .. "_switch_cooldown"] = 0.5  -- Higher default for distance
+	end
+end
+
+function get_config(key)
+	return ui_mcm.get("aim_assist/"..key) or defaults[key]
+end
+
+-- ui_mcm_aim_assist_
+
+-- Helper function to add descriptive text under an option
+function add_desc(text)
+	return {id = "desc_"..math.random(1, 9999), type = "desc", text = text, clr={255, 150, 150, 150}, spacing = 10}
+end
+
+function on_mcm_load()
+	
+	local all_settings = {
+		-- == GLOBAL SETTINGS ==
+		{id = "title",							type= "slide",		link= "ui_options_slider_player",	text="aim_assist_title",	size= {512,50},	spacing = 20 },	
+		{id = "header_global",					type = "desc", text="--- Global Settings (Apply to All Weapons) ---", clr={255, 255, 255, 255}},
+		
+		{id = "master_switch", 					type = "list", 		val = 2, content={{1, "turn_on"},{0, "turn_off"},}, def = 1 },
+		add_desc("The main on/off switch for the entire mod."),
+		
+		{id = "toggle_keybind", 				type = "key_bind",	val = 2, def = 15 },
+		add_desc("Press this key to temporarily enable or disable the aim assist. This is a master override that works for all modes."),
+		
+		{id = "main_bone", 						type = "list", 		val = 2, content={{1, "bone_head"},{2, "bone_neck"},{3, "bone_spine"},}, def = 3 },
+		add_desc("The main body part the aim assist will target. Use 'Spine' for better compatibility with mutants that lack head/neck bones. 'Neck' or 'Spine' lets recoil walk shots up to the head."),
+
+		{id = "frendly_fire",					type = "check",	val = 1,	def = false,	},
+		add_desc("If checked, aim assist will also lock onto friendly and neutral stalkers. (Default: Off)"),
+		
+		{id = "line_g1",						type = "line" },
+		
+		{id = "closer_wider",					type = "check",	val = 1,	def = false },
+		add_desc("If checked, uses the settings below to make aim assist 'stickier' at close range."),
+		
+		{id = "closer_wider_value", 			type = "track",	val = 2,	min = 0.7,	max = 1,	step = 0.001,	def = 0.7 },
+		add_desc("The 'sticky' radius to use at close range. (Lower = Stronger). Only active if 'closer_wider' is checked."),
+		
+		{id = "closer_wider_distance", 			type = "track",	val = 2,	min = 0,	max = 100,	step = 1,		def = 0 },			
+		add_desc("The maximum distance (in meters) to use the 'stickier' radius. (e.g., 10m). Only active if 'closer_wider' is checked."),
+		
+		{id = "line_g2",						type = "line" },
+
+		{id = "limit_mode", 					type = "list", val = 2, content={{-1, "less"},{0, "non"},{1, "more"},}, def=0 },
+		add_desc("Limits aim assist based on distance. 'Less' = only works on targets LESS than X meters. 'More' = only works on targets MORE than X meters."),
+		
+		{id = "limit_value", 					type = "track",	val = 2,	min = 0,	max = 1000,	step = 1,		def = 10, },
+		add_desc("The distance (in meters) to use for the 'Distance Limit Mode' above."),
+		
+		{id = "line_g3",						type = "line" },
+		
+		{id = "time_out_checkbox",				type = "check",	val = 1,	def = false },
+		add_desc("If checked, 'Zoom Mode' aim assist will automatically turn off after X seconds (prevents tracking through walls forever)."),
+		
+		{id = "time_out_input", 				type = "track",	val = 2,	min = 0,	max = 10,	step = 0.1,		def = 0.5 },
+		add_desc("The time in seconds before 'Zoom Mode' automatically disengages. Only active if 'time_out_checkbox' is checked."),
+
+		{id = "line_g4",						type = "line" },
+	}
+	
+	-- == PER-MAGNIFICATION SETTINGS ==
+	for _, level in ipairs(mag_levels) do
+		local title = "--- " .. level:sub(1,1):upper() .. level:sub(2) .. " Settings ---"
+		
+		table.insert(all_settings, { id = level.."_sep", type = "line" })
+		table.insert(all_settings, { id = level.."_title", type = "desc", text=title, clr={255, 255, 215, 0}})
+		
+		if level == "hipfire" then
+			table.insert(all_settings, add_desc("These settings apply when you are NOT aiming down sights (i.e., 'Fire Mode')."))
+		else
+			table.insert(all_settings, add_desc("These settings apply when you ARE aiming down sights with this level of magnification."))
+		end
+		
+		table.insert(all_settings, {
+			id = level.."_radius",
+			type = "track", val = 2, min = 0.7, max = 1, step = 0.001,
+			def = defaults[level.."_radius"]
+		})
+		table.insert(all_settings, add_desc("The activation radius. (1.0 = weak/small cone, 0.7 = strong/large cone). Controls how close your aim needs to be to acquire lock."))
+		
+		table.insert(all_settings, {
+			id = level.."_smooth_factor", 
+			type = "track", val = 2, min = 0, max = 1, step = 0.001,
+			def = defaults[level.."_smooth_factor"]
+		})
+		table.insert(all_settings, add_desc("Controls the pull strength towards the target (0 = off, 0.01 = very gentle, 1 = instant snap). This affects how hard the assist attracts your aim to the target once locked."))
+		
+		table.insert(all_settings, {
+			id = level.."_retention_radius",
+			type = "track", val = 2, min = 0.7, max = 1, step = 0.001,
+			def = defaults[level.."_retention_radius"]
+		})
+		table.insert(all_settings, add_desc("The retention radius for keeping lock (1.0 = small buffer/easy to lose lock, 0.7 = large buffer/hard to lose lock)."))
+		
+		table.insert(all_settings, {
+			id = level.."_retention_tightness",
+			type = "track", val = 2, min = 0, max = 100, step = 0.01,
+			def = defaults[level.."_retention_tightness"]
+		})
+		table.insert(all_settings, add_desc("Adjusts the tightness of the retention lock (0 = tightest/hardest to break, 1 = default, higher = loosest/easiest to break)."))
+
+		table.insert(all_settings, {
+			id = level.."_resist_threshold",
+			type = "track", val = 2, min = 0, max = 2, step = 0.01,
+			def = defaults[level.."_resist_threshold"]
+		})
+		table.insert(all_settings, add_desc("The minimum turn speed (in rad/s) to trigger weaker aim assist when moving away from a target. Lower = easier to break lock with slow movements (good for controllers). Higher = requires faster movements to break."))
+		
+		table.insert(all_settings, {
+			id = level.."_switch_hysteresis",
+			type = "track", val = 2, min = 0, max = 2.0, step = 0.001,  -- Raised max to 2.0 for extreme testing
+			def = defaults[level.."_switch_hysteresis"]
+		})
+		table.insert(all_settings, add_desc("Bias against switching targets (0 = no bias/easy switching, 0.01+ = prefers current target, reduces jitter between similar targets). High values (1.0+) make switching very hard—great for testing; dial back for balance."))
+		
+		-- NEW: Switch Cooldown setting
+		table.insert(all_settings, {
+			id = level.."_switch_cooldown",
+			type = "track", val = 2, min = 0, max = 5, step = 0.1,
+			def = defaults[level.."_switch_cooldown"]
+		})
+		table.insert(all_settings, add_desc("Time (seconds) after switching targets before allowing another switch (0 = off, 0.5+ = prevents rapid jitter/flipping). Use with high smoothness to stabilize."))
+		
+	end
+
+	options = { id= "aim_assist", sh=true, gr = all_settings }
+	return options
+end
