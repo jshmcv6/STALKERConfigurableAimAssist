@@ -24,6 +24,9 @@ local last_aim_time = 0
 local last_set_yaw = 0
 local last_set_pitch = 0
 
+local raycast_timeout = 0
+local raycast_delay = 60 -- 10 real ms between raycasts because in-game time is 6 : 1 real-time
+local last_raycast_was_visible = true
 -------------------------------------------------MCM stuff--------------------------------------------------------------------------------
 
 local get_config = aim_mcm.get_config
@@ -195,8 +198,30 @@ function trace_target(obj, kind, dt)
 	
 	-- Get target position (with fallback)
 	local pos = obj:get_bone_id(bone) == 65535 and pos_y(obj) or utils_obj.safe_bone_pos(obj, bone)
+	local is_visible = last_raycast_was_visible
 
-	if pos then
+	local tg = time_global()
+	if raycast_timeout < tg then
+		raycast_timeout = tg + raycast_delay
+		local ray = pos and demonized_geometry_ray.geometry_ray({
+			ray_range = 800,
+			ignore_object = db.actor,
+			flags = 3,
+			--visualize = true, -- uncomment if you want to see where the rays go
+		})
+		local posFrom = device().cam_pos
+		local posTo = vector():set(pos)
+		local res = ray and ray:get(posFrom, posTo:sub(posFrom):normalize())
+		if res.result.object and res.result.object:id() then
+			--printf("raycast hit, expected: %s, %s", tostring(res.result.object:id()), obj:id())
+		else
+			--printf("raycast miss, expected: %s", obj:id())
+		end
+		last_raycast_was_visible = res.result and res.result.object and res.result.object:id() == obj:id() or false
+		is_visible = last_raycast_was_visible
+	end
+
+	if pos and is_visible then
 		local cam_pos = device().cam_pos
 		local target_dir = vector():set(pos):sub(cam_pos):normalize()
 		local current_dir = device().cam_dir
